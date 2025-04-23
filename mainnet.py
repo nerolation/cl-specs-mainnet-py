@@ -38,6 +38,9 @@ from eth2spec.deneb import mainnet as deneb
 from eth2spec.utils.ssz.ssz_impl import ssz_serialize, ssz_deserialize
 
 
+from eth2spec.electra import mainnet as electra
+
+
 SSZObject = TypeVar('SSZObject', bound=View)
 
 
@@ -49,7 +52,7 @@ T = TypeVar('T')  # For generic function
 TPoint = TypeVar('TPoint')  # For generic function. G1 or G2 point.
 
 
-fork = 'electra'
+fork = 'fulu'
 
 
 def ceillog2(x: int) -> uint64:
@@ -62,13 +65,6 @@ def floorlog2(x: int) -> uint64:
     if x < 1:
         raise ValueError(f"floorlog2 accepts only positive values, x={x}")
     return uint64(x.bit_length() - 1)
-
-
-MAX_BYTES_PER_TRANSACTION = 1073741824
-BYTES_PER_FIELD_ELEMENT = 32
-FIELD_ELEMENTS_PER_BLOB = 4096
-MAX_BLOBS_PER_BLOCK = 6
-MAX_BLOB_COMMITMENTS_PER_BLOCK = 4096
 
 
 FINALIZED_ROOT_GINDEX = GeneralizedIndex(105)
@@ -160,10 +156,6 @@ class NextSyncCommitteeBranch(Vector[Bytes32, floorlog2(NEXT_SYNC_COMMITTEE_GIND
     pass
 
 
-class Transaction(ByteList[MAX_BYTES_PER_TRANSACTION]):
-    pass
-
-
 class ExecutionAddress(Bytes20):
     pass
 
@@ -204,7 +196,23 @@ class KZGProof(Bytes48):
     pass
 
 
-class Blob(ByteVector[BYTES_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB]):  # type: ignore
+class CellIndex(uint64):
+    pass
+
+
+class CommitmentIndex(uint64):
+    pass
+
+
+class RowIndex(uint64):
+    pass
+
+
+class ColumnIndex(uint64):
+    pass
+
+
+class CustodyIndex(uint64):
     pass
 
 
@@ -258,20 +266,20 @@ BLS_MODULUS = 524358751751261904794477405081859658376905525005276378226036586999
 BYTES_PER_COMMITMENT = uint64(48)
 BYTES_PER_PROOF = uint64(48)
 BYTES_PER_FIELD_ELEMENT = uint64(32)
-BYTES_PER_BLOB = uint64(BYTES_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB)
 G1_POINT_AT_INFINITY = Bytes48(b'\xc0' + b'\x00' * 47)
 KZG_ENDIANNESS: Final = 'big'
 PRIMITIVE_ROOT_OF_UNITY = 7
 FIAT_SHAMIR_PROTOCOL_DOMAIN = b'FSBLOBVERIFY_V1_'
 RANDOM_CHALLENGE_KZG_BATCH_DOMAIN = b'RCKZGBATCH___V1_'
 KZG_SETUP_G2_LENGTH = 65
-
 UNSET_DEPOSIT_REQUESTS_START_INDEX = uint64(2**64 - 1)
 FULL_EXIT_REQUEST_AMOUNT = uint64(0)
 COMPOUNDING_WITHDRAWAL_PREFIX = Bytes1('0x02')
 DEPOSIT_REQUEST_TYPE = Bytes1('0x00')
 WITHDRAWAL_REQUEST_TYPE = Bytes1('0x01')
 CONSOLIDATION_REQUEST_TYPE = Bytes1('0x02')
+RANDOM_CHALLENGE_KZG_CELL_BATCH_DOMAIN = b'RCKZGCBATCH__V1_'
+UINT256_MAX = uint256(2**256 - 1)
 
 
 # Preset vars
@@ -314,13 +322,13 @@ SYNC_COMMITTEE_SIZE = uint64(512)
 EPOCHS_PER_SYNC_COMMITTEE_PERIOD = uint64(256)
 MIN_SYNC_COMMITTEE_PARTICIPANTS = 1
 UPDATE_TIMEOUT = 8192
+INACTIVITY_PENALTY_QUOTIENT_BELLATRIX = uint64(16777216)
+MIN_SLASHING_PENALTY_QUOTIENT_BELLATRIX = uint64(32)
+PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX = uint64(3)
 MAX_BYTES_PER_TRANSACTION = uint64(1073741824)
 MAX_TRANSACTIONS_PER_PAYLOAD = uint64(1048576)
 BYTES_PER_LOGS_BLOOM = uint64(256)
 MAX_EXTRA_DATA_BYTES = 32
-INACTIVITY_PENALTY_QUOTIENT_BELLATRIX = uint64(16777216)
-MIN_SLASHING_PENALTY_QUOTIENT_BELLATRIX = uint64(32)
-PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX = uint64(3)
 MAX_BLS_TO_EXECUTION_CHANGES = 16
 MAX_WITHDRAWALS_PER_PAYLOAD = uint64(16)
 MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP = 16384
@@ -341,7 +349,28 @@ MAX_WITHDRAWAL_REQUESTS_PER_PAYLOAD = uint64(16)
 MAX_CONSOLIDATION_REQUESTS_PER_PAYLOAD = uint64(2)
 MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP = uint64(8)
 MAX_PENDING_DEPOSITS_PER_EPOCH = uint64(16)
-INCLUSION_PLEDGE = Gwei(10000000)
+FIELD_ELEMENTS_PER_EXT_BLOB = 8192
+FIELD_ELEMENTS_PER_CELL = uint64(64)
+KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH = uint64(4)
+
+
+# Preset computed constants
+BYTES_PER_BLOB = uint64(BYTES_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB)
+BYTES_PER_CELL = FIELD_ELEMENTS_PER_CELL * BYTES_PER_FIELD_ELEMENT
+CELLS_PER_EXT_BLOB = FIELD_ELEMENTS_PER_EXT_BLOB // FIELD_ELEMENTS_PER_CELL
+
+
+class Transaction(ByteList[MAX_BYTES_PER_TRANSACTION]):
+    pass
+
+
+class Blob(ByteVector[BYTES_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB]):  # type: ignore
+    pass
+
+
+class Cell(ByteVector[BYTES_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_CELL]):  # type: ignore
+    pass
+
 
 class Configuration(NamedTuple):
     PRESET_BASE: str
@@ -399,6 +428,18 @@ class Configuration(NamedTuple):
     ELECTRA_FORK_EPOCH: Epoch
     MAX_REQUEST_BLOB_SIDECARS_ELECTRA: int
     BLOB_SIDECAR_SUBNET_COUNT_ELECTRA: int
+    MAX_BLOBS_PER_BLOCK_FULU: uint64
+    NUMBER_OF_COLUMNS: uint64
+    SAMPLES_PER_SLOT: int
+    NUMBER_OF_CUSTODY_GROUPS: int
+    CUSTODY_REQUIREMENT: int
+    FULU_FORK_VERSION: Version
+    FULU_FORK_EPOCH: Epoch
+    DATA_COLUMN_SIDECAR_SUBNET_COUNT: int
+    MAX_REQUEST_DATA_COLUMN_SIDECARS: int
+    MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS: int
+    VALIDATOR_CUSTODY_REQUIREMENT: int
+    BALANCE_PER_ADDITIONAL_CUSTODY_GROUP: Gwei
 
 
 config = Configuration(
@@ -454,9 +495,21 @@ config = Configuration(
     MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA=Gwei(128000000000),
     MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT=Gwei(256000000000),
     ELECTRA_FORK_VERSION=Version('0x05000000'),
-    ELECTRA_FORK_EPOCH=Epoch(18446744073709551615),
+    ELECTRA_FORK_EPOCH=Epoch(364032),
     MAX_REQUEST_BLOB_SIDECARS_ELECTRA=1152,
     BLOB_SIDECAR_SUBNET_COUNT_ELECTRA=9,
+    MAX_BLOBS_PER_BLOCK_FULU=uint64(12),
+    NUMBER_OF_COLUMNS=uint64(128),
+    SAMPLES_PER_SLOT=8,
+    NUMBER_OF_CUSTODY_GROUPS=128,
+    CUSTODY_REQUIREMENT=4,
+    FULU_FORK_VERSION=Version('0x06000000'),
+    FULU_FORK_EPOCH=Epoch(18446744073709551615),
+    DATA_COLUMN_SIDECAR_SUBNET_COUNT=128,
+    MAX_REQUEST_DATA_COLUMN_SIDECARS=16384,
+    MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS=4096,
+    VALIDATOR_CUSTODY_REQUIREMENT=8,
+    BALANCE_PER_ADDITIONAL_CUSTODY_GROUP=Gwei(32000000000),
 )
 
 
@@ -470,6 +523,31 @@ class Polynomial(list):
             evals = [BLSFieldElement(0)] * FIELD_ELEMENTS_PER_BLOB
         if len(evals) != FIELD_ELEMENTS_PER_BLOB:
             raise ValueError("expected FIELD_ELEMENTS_PER_BLOB evals")
+        super().__init__(evals)
+
+
+class PolynomialCoeff(list):
+    def __init__(self, coeffs: Sequence[BLSFieldElement]):
+        if len(coeffs) > FIELD_ELEMENTS_PER_EXT_BLOB:
+            raise ValueError("expected <= FIELD_ELEMENTS_PER_EXT_BLOB coeffs")
+        super().__init__(coeffs)
+
+
+class Coset(list):
+    def __init__(self, coeffs: Optional[Sequence[BLSFieldElement]] = None):
+        if coeffs is None:
+            coeffs = [BLSFieldElement(0)] * FIELD_ELEMENTS_PER_CELL
+        if len(coeffs) != FIELD_ELEMENTS_PER_CELL:
+            raise ValueError("expected FIELD_ELEMENTS_PER_CELL coeffs")
+        super().__init__(coeffs)
+
+
+class CosetEvals(list):
+    def __init__(self, evals: Optional[Sequence[BLSFieldElement]] = None):
+        if evals is None:
+            evals = [BLSFieldElement(0)] * FIELD_ELEMENTS_PER_CELL
+        if len(evals) != FIELD_ELEMENTS_PER_CELL:
+            raise ValueError("expected FIELD_ELEMENTS_PER_CELL coeffs")
         super().__init__(evals)
 
 
@@ -688,6 +766,7 @@ class ExecutionPayloadHeader(Container):
     withdrawals_root: Root
     blob_gas_used: uint64  # [New in Deneb:EIP4844]
     excess_blob_gas: uint64  # [New in Deneb:EIP4844]
+    proposer_slash_amount: Gwei  # [New in ...: Proposer Slashing]
 
 
 class LightClientHeader(Container):
@@ -775,6 +854,7 @@ class ExecutionPayload(Container):
     withdrawals: List[Withdrawal, MAX_WITHDRAWALS_PER_PAYLOAD]
     blob_gas_used: uint64  # [New in Deneb:EIP4844]
     excess_blob_gas: uint64  # [New in Deneb:EIP4844]
+    proposer_slash_amount: Gwei  # [New in Fulu: Proposer Slashing]
 
 
 class BLSToExecutionChange(Container):
@@ -882,7 +962,6 @@ class BeaconState(Container):
     # [New in Electra:EIP7251]
     pending_partial_withdrawals: List[PendingPartialWithdrawal, PENDING_PARTIAL_WITHDRAWALS_LIMIT]
     pending_consolidations: List[PendingConsolidation, PENDING_CONSOLIDATIONS_LIMIT]  # [New in Electra:EIP7251]
-    parent_proposer_index: uint64
 
 
 class DepositRequest(Container):
@@ -927,7 +1006,6 @@ class BeaconBlockBody(Container):
     bls_to_execution_changes: List[SignedBLSToExecutionChange, MAX_BLS_TO_EXECUTION_CHANGES]
     blob_kzg_commitments: List[KZGCommitment, MAX_BLOB_COMMITMENTS_PER_BLOCK]
     execution_requests: ExecutionRequests  # [New in Electra]
-    parent_il_satisfied: Bool
 
 
 class BeaconBlock(Container):
@@ -948,6 +1026,27 @@ class SingleAttestation(Container):
     attester_index: ValidatorIndex
     data: AttestationData
     signature: BLSSignature
+
+
+class DataColumnSidecar(Container):
+    index: ColumnIndex  # Index of column in extended matrix
+    column: List[Cell, MAX_BLOB_COMMITMENTS_PER_BLOCK]
+    kzg_commitments: List[KZGCommitment, MAX_BLOB_COMMITMENTS_PER_BLOCK]
+    kzg_proofs: List[KZGProof, MAX_BLOB_COMMITMENTS_PER_BLOCK]
+    signed_block_header: SignedBeaconBlockHeader
+    kzg_commitments_inclusion_proof: Vector[Bytes32, KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH]
+
+
+class MatrixEntry(Container):
+    cell: Cell
+    kzg_proof: KZGProof
+    column_index: ColumnIndex
+    row_index: RowIndex
+
+
+class DataColumnIdentifier(Container):
+    block_root: Root
+    index: ColumnIndex
 
 
 @dataclass(eq=True, frozen=True)
@@ -1017,17 +1116,17 @@ class OptimisticStore(object):
 
 @dataclass
 class BlobsBundle(object):
-    commitments: Sequence[KZGCommitment]
-    proofs: Sequence[KZGProof]
-    blobs: Sequence[Blob]
+    commitments: List[KZGCommitment, MAX_BLOB_COMMITMENTS_PER_BLOCK]
+    # [Modified in Fulu:EIP7594]
+    proofs: List[KZGProof, FIELD_ELEMENTS_PER_EXT_BLOB * MAX_BLOB_COMMITMENTS_PER_BLOCK]
+    blobs: List[Blob, MAX_BLOB_COMMITMENTS_PER_BLOCK]
 
 
 @dataclass
 class GetPayloadResponse(object):
     execution_payload: ExecutionPayload
     block_value: uint256
-    blobs_bundle: BlobsBundle
-    execution_requests: Sequence[bytes]  # [New in Electra]
+    blobs_bundle: BlobsBundle  # [Modified in Fulu:EIP7594]
 
 
 class ExecutionEngine(Protocol):
@@ -1064,7 +1163,7 @@ class ExecutionEngine(Protocol):
 
     def get_payload(self, payload_id: PayloadId) -> GetPayloadResponse:
         """
-        Return ExecutionPayload, uint256, BlobsBundle and execution requests (as Sequence[bytes]) objects.
+        Return ExecutionPayload, uint256, BlobsBundle objects.
         """
         # pylint: disable=unused-argument
         ...
@@ -1553,6 +1652,10 @@ def initialize_beacon_state_from_eth1(eth1_block_hash: Hash32,
     # Set genesis validators root for domain separation and chain versioning
     state.genesis_validators_root = hash_tree_root(state.validators)
 
+    # Initialize latest_execution_payload_header with proposer_slash_amount set to 0
+    if hasattr(state, 'latest_execution_payload_header'):
+        state.latest_execution_payload_header.proposer_slash_amount = Gwei(0)
+
     return state
 
 
@@ -1868,11 +1971,9 @@ def process_registry_updates(state: BeaconState) -> None:
     for index, validator in enumerate(state.validators):
         if is_eligible_for_activation_queue(validator):  # [Modified in Electra:EIP7251]
             validator.activation_eligibility_epoch = current_epoch + 1
-
-        if is_active_validator(validator, current_epoch) and validator.effective_balance <= config.EJECTION_BALANCE:
+        elif is_active_validator(validator, current_epoch) and validator.effective_balance <= config.EJECTION_BALANCE:
             initiate_validator_exit(state, ValidatorIndex(index))  # [Modified in Electra:EIP7251]
-
-        if is_eligible_for_activation(state, validator):
+        elif is_eligible_for_activation(state, validator):
             validator.activation_epoch = activation_epoch
 
 
@@ -1947,19 +2048,13 @@ def process_participation_record_updates(state: BeaconState) -> None:
 def process_block(state: BeaconState, block: BeaconBlock) -> None:
     process_block_header(state, block)
     process_withdrawals(state, block.body.execution_payload)  # [Modified in Electra:EIP7251]
-    process_inclusion_pledges(state, block)
     process_execution_payload(state, block.body, EXECUTION_ENGINE)  # [Modified in Electra:EIP6110]
     process_randao(state, block.body)
     process_eth1_data(state, block.body)
     process_operations(state, block.body)  # [Modified in Electra:EIP6110:EIP7002:EIP7549:EIP7251]
     process_sync_aggregate(state, block.body.sync_aggregate)
 
-def process_inclusion_pledges(state, block):  
-    if block.body.parent_il_satisfied:
-        increase_balance(state, state.parent_proposer_index, INCLUSION_PLEDGE)  
-    decrease_balance(state, block.proposer_index, INCLUSION_PLEDGE)
-    
-    
+
 def process_block_header(state: BeaconState, block: BeaconBlock) -> None:
     # Verify that the slots match
     assert block.slot == state.slot
@@ -2208,11 +2303,6 @@ def process_voluntary_exit(state: BeaconState, signed_voluntary_exit: SignedVolu
     assert bls.Verify(validator.pubkey, signing_root, signed_voluntary_exit.signature)
     # Initiate exit
     initiate_validator_exit(state, voluntary_exit.validator_index)
-
-
-def is_previous_epoch_justified(store: Store) -> bool:
-    current_epoch = get_current_store_epoch(store)
-    return store.justified_checkpoint.epoch + 1 == current_epoch
 
 
 def get_forkchoice_store(anchor_state: BeaconState, anchor_block: BeaconBlock) -> Store:
@@ -2604,6 +2694,8 @@ def on_block(store: Store, signed_block: SignedBeaconBlock) -> None:
     block = signed_block.message
     # Parent block must be known
     assert block.parent_root in store.block_states
+    # Make a copy of the state to avoid mutability issues
+    state = copy(store.block_states[block.parent_root])
     # Blocks cannot be in the future. If they are, their consideration must be delayed until they are in the past.
     assert get_current_slot(store) >= block.slot
 
@@ -2618,16 +2710,10 @@ def on_block(store: Store, signed_block: SignedBeaconBlock) -> None:
     )
     assert store.finalized_checkpoint.root == finalized_checkpoint_block
 
-    # [New in Deneb:EIP4844]
-    # Check if blob data is available
-    # If not, this block MAY be queued and subsequently considered when blob data becomes available
-    # *Note*: Extraneous or invalid Blobs (in addition to the expected/referenced valid blobs)
-    # received on the p2p network MUST NOT invalidate a block that is otherwise valid and available
-    assert is_data_available(hash_tree_root(block), block.body.blob_kzg_commitments)
+    # [Modified in Fulu:EIP7594]
+    assert is_data_available(hash_tree_root(block))
 
     # Check the block is valid and compute the post-state
-    # Make a copy of the state to avoid mutability issues
-    state = copy(store.block_states[block.parent_root])
     block_root = hash_tree_root(block)
     state_transition(state, signed_block, True)
 
@@ -2878,33 +2964,14 @@ def compute_weak_subjectivity_period(state: BeaconState) -> uint64:
     """
     Returns the weak subjectivity period for the current ``state``.
     This computation takes into account the effect of:
-        - validator set churn (bounded by ``get_validator_churn_limit()`` per epoch), and
-        - validator balance top-ups (bounded by ``MAX_DEPOSITS * SLOTS_PER_EPOCH`` per epoch).
+        - validator set churn (bounded by ``get_balance_churn_limit()`` per epoch)
     A detailed calculation can be found at:
-    https://github.com/runtimeverification/beacon-chain-verification/blob/master/weak-subjectivity/weak-subjectivity-analysis.pdf
+    https://notes.ethereum.org/@CarlBeek/electra_weak_subjectivity
     """
-    ws_period = config.MIN_VALIDATOR_WITHDRAWABILITY_DELAY
-    N = len(get_active_validator_indices(state, get_current_epoch(state)))
-    t = get_total_active_balance(state) // N // ETH_TO_GWEI
-    T = MAX_EFFECTIVE_BALANCE // ETH_TO_GWEI
-    delta = get_validator_churn_limit(state)
-    Delta = MAX_DEPOSITS * SLOTS_PER_EPOCH
-    D = SAFETY_DECAY
-
-    if T * (200 + 3 * D) < t * (200 + 12 * D):
-        epochs_for_validator_set_churn = (
-            N * (t * (200 + 12 * D) - T * (200 + 3 * D)) // (600 * delta * (2 * t + T))
-        )
-        epochs_for_balance_top_ups = (
-            N * (200 + 3 * D) // (600 * Delta)
-        )
-        ws_period += max(epochs_for_validator_set_churn, epochs_for_balance_top_ups)
-    else:
-        ws_period += (
-            3 * N * D * t // (200 * Delta * (T - t))
-        )
-
-    return ws_period
+    t = get_total_active_balance(state)
+    delta = get_balance_churn_limit(state)
+    epochs_for_validator_set_churn = SAFETY_DECAY * t // (2 * delta * 100)
+    return config.MIN_VALIDATOR_WITHDRAWABILITY_DELAY + epochs_for_validator_set_churn
 
 
 def is_within_weak_subjectivity_period(store: Store, ws_state: BeaconState, ws_checkpoint: Checkpoint) -> bool:
@@ -2912,7 +2979,7 @@ def is_within_weak_subjectivity_period(store: Store, ws_state: BeaconState, ws_c
     assert ws_state.latest_block_header.state_root == ws_checkpoint.root
     assert compute_epoch_at_slot(ws_state.slot) == ws_checkpoint.epoch
 
-    ws_period = compute_weak_subjectivity_period(ws_state)
+    ws_period = compute_weak_subjectivity_period(ws_state)  # [Modified in Electra]
     ws_state_epoch = compute_epoch_at_slot(ws_state.slot)
     current_epoch = compute_epoch_at_slot(get_current_slot(store))
     return current_epoch <= ws_state_epoch + ws_period
@@ -3123,6 +3190,8 @@ def compute_fork_version(epoch: Epoch) -> Version:
     """
     Return the fork version at the given ``epoch``.
     """
+    if epoch >= config.FULU_FORK_EPOCH:
+        return config.FULU_FORK_VERSION
     if epoch >= config.ELECTRA_FORK_EPOCH:
         return config.ELECTRA_FORK_VERSION
     if epoch >= config.DENEB_FORK_EPOCH:
@@ -3569,6 +3638,8 @@ def is_better_update(new_update: LightClientUpdate, old_update: LightClientUpdat
     # Tiebreaker 2: Prefer older data (fewer changes to best)
     if new_update.attested_header.beacon.slot != old_update.attested_header.beacon.slot:
         return new_update.attested_header.beacon.slot < old_update.attested_header.beacon.slot
+
+    # Tiebreaker 3: Prefer updates with earlier signature slots
     return new_update.signature_slot < old_update.signature_slot
 
 
@@ -3845,7 +3916,7 @@ def process_execution_payload(state: BeaconState, body: BeaconBlockBody, executi
     # Verify timestamp
     assert payload.timestamp == compute_timestamp_at_slot(state, state.slot)
     # Verify commitments are under limit
-    assert len(body.blob_kzg_commitments) <= config.MAX_BLOBS_PER_BLOCK_ELECTRA  # [Modified in Electra:EIP7691]
+    assert len(body.blob_kzg_commitments) <= config.MAX_BLOBS_PER_BLOCK_FULU  # [Modified in Fulu:EIP7594]
     # Verify the execution payload is valid
     versioned_hashes = [kzg_commitment_to_versioned_hash(commitment) for commitment in body.blob_kzg_commitments]
     assert execution_engine.verify_and_notify_new_payload(
@@ -3853,9 +3924,15 @@ def process_execution_payload(state: BeaconState, body: BeaconBlockBody, executi
             execution_payload=payload,
             versioned_hashes=versioned_hashes,
             parent_beacon_block_root=state.latest_block_header.parent_root,
-            execution_requests=body.execution_requests,  # [New in Electra]
+            execution_requests=body.execution_requests,
         )
     )
+    
+    # Apply proposer slashing from EL payload if needed
+    proposer_index = state.latest_block_header.proposer_index
+    if payload.proposer_slash_amount > 0:
+        decrease_balance(state, proposer_index, payload.proposer_slash_amount)
+    
     # Cache execution payload header
     state.latest_execution_payload_header = ExecutionPayloadHeader(
         parent_hash=payload.parent_hash,
@@ -3875,6 +3952,7 @@ def process_execution_payload(state: BeaconState, body: BeaconBlockBody, executi
         withdrawals_root=hash_tree_root(payload.withdrawals),
         blob_gas_used=payload.blob_gas_used,
         excess_blob_gas=payload.excess_blob_gas,
+        proposer_slash_amount=payload.proposer_slash_amount,  # [New in Fulu: Proposer Slashing]
     )
 
 
@@ -4717,7 +4795,7 @@ def compute_quotient_eval_within_domain(z: BLSFieldElement,
                                         y: BLSFieldElement) -> BLSFieldElement:
     """
     Given `y == p(z)` for a polynomial `p(x)`, compute `q(z)`: the KZG quotient polynomial evaluated at `z` for the
-    special case where `z` is in roots of unity.
+    special case where `z` is a root of unity.
 
     For more details, read https://dankradfeist.de/ethereum/2021/06/18/pcs-multiproofs.html section "Dividing
     when one of the points is zero". The code below computes q(x_m) for the roots of unity special case.
@@ -4829,14 +4907,18 @@ def verify_blob_kzg_proof_batch(blobs: Sequence[Blob],
     return verify_kzg_proof_batch(commitments, evaluation_challenges, ys, proofs)
 
 
-def is_data_available(beacon_block_root: Root, blob_kzg_commitments: Sequence[KZGCommitment]) -> bool:
-    # `retrieve_blobs_and_proofs` is implementation and context dependent
-    # It returns all the blobs for the given block root, and raises an exception if not available
-    # Note: the p2p network does not guarantee sidecar retrieval outside of
-    # `config.MIN_EPOCHS_FOR_BLOB_SIDECARS_REQUESTS`
-    blobs, proofs = retrieve_blobs_and_proofs(beacon_block_root)
-
-    return verify_blob_kzg_proof_batch(blobs, blob_kzg_commitments, proofs)
+def is_data_available(beacon_block_root: Root) -> bool:
+    # `retrieve_column_sidecars` is implementation and context dependent, replacing
+    # `retrieve_blobs_and_proofs`. For the given block root, it returns all column
+    # sidecars to sample, or raises an exception if they are not available.
+    # The p2p network does not guarantee sidecar retrieval outside of
+    # `config.MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS` epochs.
+    column_sidecars = retrieve_column_sidecars(beacon_block_root)
+    return all(
+        verify_data_column_sidecar(column_sidecar)
+        and verify_data_column_sidecar_kzg_proofs(column_sidecar)
+        for column_sidecar in column_sidecars
+    )
 
 
 def upgrade_to_deneb(pre: capella.BeaconState) -> BeaconState:
@@ -5428,7 +5510,7 @@ def process_consolidation_request(
         switch_to_compounding_validator(state, source_index)
         return
 
-    # Verify that source != target, so a consolidation cannot be used as an exit.
+    # Verify that source != target, so a consolidation cannot be used as an exit
     if consolidation_request.source_pubkey == consolidation_request.target_pubkey:
         return
     # If the pending consolidations queue is full, consolidation requests are ignored
@@ -5751,6 +5833,916 @@ def upgrade_lc_store_to_electra(pre: deneb.LightClientStore) -> LightClientStore
     )
 
 
+def cell_to_coset_evals(cell: Cell) -> CosetEvals:
+    """
+    Convert an untrusted ``Cell`` into a trusted ``CosetEvals``.
+    """
+    evals = CosetEvals()
+    for i in range(FIELD_ELEMENTS_PER_CELL):
+        start = i * BYTES_PER_FIELD_ELEMENT
+        end = (i + 1) * BYTES_PER_FIELD_ELEMENT
+        evals[i] = bytes_to_bls_field(cell[start:end])
+    return evals
+
+
+def coset_evals_to_cell(coset_evals: CosetEvals) -> Cell:
+    """
+    Convert a trusted ``CosetEval`` into an untrusted ``Cell``.
+    """
+    cell = []
+    for i in range(FIELD_ELEMENTS_PER_CELL):
+        cell += bls_field_to_bytes(coset_evals[i])
+    return Cell(cell)
+
+
+def _fft_field(vals: Sequence[BLSFieldElement], roots_of_unity: Sequence[BLSFieldElement]) -> Sequence[BLSFieldElement]:
+    if len(vals) == 1:
+        return vals
+    L = _fft_field(vals[::2], roots_of_unity[::2])
+    R = _fft_field(vals[1::2], roots_of_unity[::2])
+    o = [BLSFieldElement(0) for _ in vals]
+    for i, (x, y) in enumerate(zip(L, R)):
+        y_times_root = y * roots_of_unity[i]
+        o[i] = x + y_times_root
+        o[i + len(L)] = x - y_times_root
+    return o
+
+
+def fft_field(vals: Sequence[BLSFieldElement],
+              roots_of_unity: Sequence[BLSFieldElement],
+              inv: bool=False) -> Sequence[BLSFieldElement]:
+    if inv:
+        # Inverse FFT
+        invlen = BLSFieldElement(len(vals)).pow(BLSFieldElement(BLS_MODULUS - 2))
+        return [x * invlen for x in _fft_field(vals, list(roots_of_unity[0:1]) + list(roots_of_unity[:0:-1]))]
+    else:
+        # Regular FFT
+        return _fft_field(vals, roots_of_unity)
+
+
+def coset_fft_field(vals: Sequence[BLSFieldElement],
+                    roots_of_unity: Sequence[BLSFieldElement],
+                    inv: bool=False) -> Sequence[BLSFieldElement]:
+    """
+    Computes an FFT/IFFT over a coset of the roots of unity.
+    This is useful for when one wants to divide by a polynomial which
+    vanishes on one or more elements in the domain.
+    """
+    vals = [v for v in vals]  # copy
+
+    def shift_vals(vals: Sequence[BLSFieldElement], factor: BLSFieldElement) -> Sequence[BLSFieldElement]:
+        """
+        Multiply each entry in `vals` by succeeding powers of `factor`
+        i.e., [vals[0] * factor^0, vals[1] * factor^1, ..., vals[n] * factor^n]
+        """
+        updated_vals: List[BLSFieldElement] = []
+        shift = BLSFieldElement(1)
+        for i in range(len(vals)):
+            updated_vals.append(vals[i] * shift)
+            shift = shift * factor
+        return updated_vals
+
+    # This is the coset generator; it is used to compute a FFT/IFFT over a coset of
+    # the roots of unity.
+    shift_factor = BLSFieldElement(PRIMITIVE_ROOT_OF_UNITY)
+    if inv:
+        vals = fft_field(vals, roots_of_unity, inv)
+        return shift_vals(vals, shift_factor.inverse())
+    else:
+        vals = shift_vals(vals, shift_factor)
+        return fft_field(vals, roots_of_unity, inv)
+
+
+def compute_verify_cell_kzg_proof_batch_challenge(commitments: Sequence[KZGCommitment],
+                                                  commitment_indices: Sequence[CommitmentIndex],
+                                                  cell_indices: Sequence[CellIndex],
+                                                  cosets_evals: Sequence[CosetEvals],
+                                                  proofs: Sequence[KZGProof]) -> BLSFieldElement:
+    """
+    Compute a random challenge ``r`` used in the universal verification equation. To compute the
+    challenge, ``RANDOM_CHALLENGE_KZG_CELL_BATCH_DOMAIN`` and all data that can influence the
+    verification is hashed together to deterministically generate a "random" field element via
+    the Fiat-Shamir heuristic.
+    """
+    hashinput = RANDOM_CHALLENGE_KZG_CELL_BATCH_DOMAIN
+    hashinput += int.to_bytes(FIELD_ELEMENTS_PER_BLOB, 8, KZG_ENDIANNESS)
+    hashinput += int.to_bytes(FIELD_ELEMENTS_PER_CELL, 8, KZG_ENDIANNESS)
+    hashinput += int.to_bytes(len(commitments), 8, KZG_ENDIANNESS)
+    hashinput += int.to_bytes(len(cell_indices), 8, KZG_ENDIANNESS)
+    for commitment in commitments:
+        hashinput += commitment
+    for k, coset_evals in enumerate(cosets_evals):
+        hashinput += int.to_bytes(commitment_indices[k], 8, KZG_ENDIANNESS)
+        hashinput += int.to_bytes(cell_indices[k], 8, KZG_ENDIANNESS)
+        for coset_eval in coset_evals:
+            hashinput += bls_field_to_bytes(coset_eval)
+        hashinput += proofs[k]
+    return hash_to_bls_field(hashinput)
+
+
+def polynomial_eval_to_coeff(polynomial: Polynomial) -> PolynomialCoeff:
+    """
+    Interpolates a polynomial (given in evaluation form) to a polynomial in coefficient form.
+    """
+    roots_of_unity = compute_roots_of_unity(FIELD_ELEMENTS_PER_BLOB)
+    return PolynomialCoeff(fft_field(bit_reversal_permutation(polynomial), roots_of_unity, inv=True))
+
+
+def add_polynomialcoeff(a: PolynomialCoeff, b: PolynomialCoeff) -> PolynomialCoeff:
+    """
+    Sum the coefficient form polynomials ``a`` and ``b``.
+    """
+    a, b = (a, b) if len(a) >= len(b) else (b, a)
+    length_a, length_b = len(a), len(b)
+    return PolynomialCoeff([a[i] + (b[i] if i < length_b else BLSFieldElement(0)) for i in range(length_a)])
+
+
+def multiply_polynomialcoeff(a: PolynomialCoeff, b: PolynomialCoeff) -> PolynomialCoeff:
+    """
+    Multiply the coefficient form polynomials ``a`` and ``b``.
+    """
+    assert len(a) + len(b) <= FIELD_ELEMENTS_PER_EXT_BLOB
+
+    r = PolynomialCoeff([BLSFieldElement(0)])
+    for power, coef in enumerate(a):
+        summand = PolynomialCoeff([BLSFieldElement(0)] * power + [coef * x for x in b])
+        r = add_polynomialcoeff(r, summand)
+    return r
+
+
+def divide_polynomialcoeff(a: PolynomialCoeff, b: PolynomialCoeff) -> PolynomialCoeff:
+    """
+    Long polynomial division for two coefficient form polynomials ``a`` and ``b``.
+    """
+    a = PolynomialCoeff(a[:])  # copy
+    o = PolynomialCoeff([])
+    apos = len(a) - 1
+    bpos = len(b) - 1
+    diff = apos - bpos
+    while diff >= 0:
+        quot = a[apos] / b[bpos]
+        o.insert(0, quot)
+        for i in range(bpos, -1, -1):
+            a[diff + i] = a[diff + i] - b[i] * quot
+        apos -= 1
+        diff -= 1
+    return o
+
+
+def interpolate_polynomialcoeff(xs: Sequence[BLSFieldElement], ys: Sequence[BLSFieldElement]) -> PolynomialCoeff:
+    """
+    Lagrange interpolation: Finds the lowest degree polynomial that takes the value ``ys[i]`` at ``x[i]`` for all i.
+    Outputs a coefficient form polynomial. Leading coefficients may be zero.
+    """
+    assert len(xs) == len(ys)
+
+    r = PolynomialCoeff([BLSFieldElement(0)])
+    for i in range(len(xs)):
+        summand = PolynomialCoeff([ys[i]])
+        for j in range(len(ys)):
+            if j != i:
+                weight_adjustment = (xs[i] - xs[j]).inverse()
+                summand = multiply_polynomialcoeff(
+                    summand, PolynomialCoeff([-weight_adjustment * xs[j], weight_adjustment])
+                )
+        r = add_polynomialcoeff(r, summand)
+    return r
+
+
+def vanishing_polynomialcoeff(xs: Sequence[BLSFieldElement]) -> PolynomialCoeff:
+    """
+    Compute the vanishing polynomial on ``xs`` (in coefficient form).
+    """
+    p = PolynomialCoeff([BLSFieldElement(1)])
+    for x in xs:
+        p = multiply_polynomialcoeff(p, PolynomialCoeff([-x, BLSFieldElement(1)]))
+    return p
+
+
+def evaluate_polynomialcoeff(polynomial_coeff: PolynomialCoeff, z: BLSFieldElement) -> BLSFieldElement:
+    """
+    Evaluate a coefficient form polynomial at ``z`` using Horner's schema.
+    """
+    y = BLSFieldElement(0)
+    for coef in polynomial_coeff[::-1]:
+        y = y * z + coef
+    return y
+
+
+def compute_kzg_proof_multi_impl(
+        polynomial_coeff: PolynomialCoeff,
+        zs: Coset) -> Tuple[KZGProof, CosetEvals]:
+    """
+    Compute a KZG multi-evaluation proof for a set of `k` points.
+
+    This is done by committing to the following quotient polynomial:
+        Q(X) = f(X) - I(X) / Z(X)
+    Where:
+        - I(X) is the degree `k-1` polynomial that agrees with f(x) at all `k` points
+        - Z(X) is the degree `k` polynomial that evaluates to zero on all `k` points
+
+    We further note that since the degree of I(X) is less than the degree of Z(X),
+    the computation can be simplified in monomial form to Q(X) = f(X) / Z(X).
+    """
+
+    # For all points, compute the evaluation of those points
+    ys = CosetEvals([evaluate_polynomialcoeff(polynomial_coeff, z) for z in zs])
+
+    # Compute Z(X)
+    denominator_poly = vanishing_polynomialcoeff(zs)
+
+    # Compute the quotient polynomial directly in monomial form
+    quotient_polynomial = divide_polynomialcoeff(polynomial_coeff, denominator_poly)
+
+    return KZGProof(g1_lincomb(KZG_SETUP_G1_MONOMIAL[:len(quotient_polynomial)], quotient_polynomial)), ys
+
+
+def verify_cell_kzg_proof_batch_impl(commitments: Sequence[KZGCommitment],
+                                     commitment_indices: Sequence[CommitmentIndex],
+                                     cell_indices: Sequence[CellIndex],
+                                     cosets_evals: Sequence[CosetEvals],
+                                     proofs: Sequence[KZGProof]) -> bool:
+    """
+    Helper: Verify that a set of cells belong to their corresponding commitment.
+
+    Given a list of ``commitments`` (which contains no duplicates) and four lists representing
+    tuples of (``commitment_index``, ``cell_index``, ``evals``, ``proof``), the function
+    verifies ``proof`` which shows that ``evals`` are the evaluations of the polynomial associated
+    with ``commitments[commitment_index]``, evaluated over the domain specified by ``cell_index``.
+
+    This function is the internal implementation of ``verify_cell_kzg_proof_batch``.
+    """
+    assert len(commitment_indices) == len(cell_indices) == len(cosets_evals) == len(proofs)
+    assert len(commitments) == len(set(commitments))
+    for commitment_index in commitment_indices:
+        assert commitment_index < len(commitments)
+
+    # The verification equation that we will check is pairing (LL, LR) = pairing (RL, [1]), where
+    # LL = sum_k r^k proofs[k],
+    # LR = [s^n]
+    # RL = RLC - RLI + RLP, where
+    #   RLC = sum_i weights[i] commitments[i]
+    #   RLI = [sum_k r^k interpolation_poly_k(s)]
+    #   RLP = sum_k (r^k * h_k^n) proofs[k]
+    #
+    # Here, the variables have the following meaning:
+    # - k < len(cell_indices) is an index iterating over all cells in the input
+    # - r is a random coefficient, derived from hashing all data provided by the prover
+    # - s is the secret embedded in the KZG setup
+    # - n = FIELD_ELEMENTS_PER_CELL is the size of the evaluation domain
+    # - i ranges over all provided commitments
+    # - weights[i] is a weight computed for commitment i
+    #   - It depends on r and on which cells are associated with commitment i
+    # - interpolation_poly_k is the interpolation polynomial for the kth cell
+    # - h_k is the coset shift specifying the evaluation domain of the kth cell
+
+    # Preparation
+    num_cells = len(cell_indices)
+    n = FIELD_ELEMENTS_PER_CELL
+    num_commitments = len(commitments)
+
+    # Step 1: Compute a challenge r and its powers r^0, ..., r^{num_cells-1}
+    r = compute_verify_cell_kzg_proof_batch_challenge(
+        commitments,
+        commitment_indices,
+        cell_indices,
+        cosets_evals,
+        proofs
+    )
+    r_powers = compute_powers(r, num_cells)
+
+    # Step 2: Compute LL = sum_k r^k proofs[k]
+    ll = bls.bytes48_to_G1(g1_lincomb(proofs, r_powers))
+
+    # Step 3: Compute LR = [s^n]
+    lr = bls.bytes96_to_G2(KZG_SETUP_G2_MONOMIAL[n])
+
+    # Step 4: Compute RL = RLC - RLI + RLP
+    # Step 4.1: Compute RLC = sum_i weights[i] commitments[i]
+    # Step 4.1a: Compute weights[i]: the sum of all r^k for which cell k is associated with commitment i.
+    # Note: we do that by iterating over all k and updating the correct weights[i] accordingly
+    weights = [BLSFieldElement(0)] * num_commitments
+    for k in range(num_cells):
+        i = commitment_indices[k]
+        weights[i] += r_powers[k]
+    # Step 4.1b: Linearly combine the weights with the commitments to get RLC
+    rlc = bls.bytes48_to_G1(g1_lincomb(commitments, weights))
+
+    # Step 4.2: Compute RLI = [sum_k r^k interpolation_poly_k(s)]
+    # Note: an efficient implementation would use the IDFT based method explained in the blog post
+    sum_interp_polys_coeff = PolynomialCoeff([BLSFieldElement(0)] * n)
+    for k in range(num_cells):
+        interp_poly_coeff = interpolate_polynomialcoeff(coset_for_cell(cell_indices[k]), cosets_evals[k])
+        interp_poly_scaled_coeff = multiply_polynomialcoeff(PolynomialCoeff([r_powers[k]]), interp_poly_coeff)
+        sum_interp_polys_coeff = add_polynomialcoeff(sum_interp_polys_coeff, interp_poly_scaled_coeff)
+    rli = bls.bytes48_to_G1(g1_lincomb(KZG_SETUP_G1_MONOMIAL[:n], sum_interp_polys_coeff))
+
+    # Step 4.3: Compute RLP = sum_k (r^k * h_k^n) proofs[k]
+    weighted_r_powers = []
+    for k in range(num_cells):
+        h_k = coset_shift_for_cell(cell_indices[k])
+        h_k_pow = h_k.pow(BLSFieldElement(n))
+        wrp = r_powers[k] * h_k_pow
+        weighted_r_powers.append(wrp)
+    rlp = bls.bytes48_to_G1(g1_lincomb(proofs, weighted_r_powers))
+
+    # Step 4.4: Compute RL = RLC - RLI + RLP
+    rl = bls.add(rlc, bls.neg(rli))
+    rl = bls.add(rl, rlp)
+
+    # Step 5: Check pairing (LL, LR) = pairing (RL, [1])
+    return (bls.pairing_check([
+        [ll, lr],
+        [rl, bls.neg(bls.bytes96_to_G2(KZG_SETUP_G2_MONOMIAL[0]))],
+    ]))
+
+
+def coset_shift_for_cell(cell_index: CellIndex) -> BLSFieldElement:
+    """
+    Get the shift that determines the coset for a given ``cell_index``.
+    Precisely, consider the group of roots of unity of order FIELD_ELEMENTS_PER_CELL * CELLS_PER_EXT_BLOB.
+    Let G = {1, g, g^2, ...} denote its subgroup of order FIELD_ELEMENTS_PER_CELL.
+    Then, the coset is defined as h * G = {h, hg, hg^2, ...} for an element h.
+    This function returns h.
+    """
+    assert cell_index < CELLS_PER_EXT_BLOB
+    roots_of_unity_brp = bit_reversal_permutation(
+        compute_roots_of_unity(FIELD_ELEMENTS_PER_EXT_BLOB)
+    )
+    return roots_of_unity_brp[FIELD_ELEMENTS_PER_CELL * cell_index]
+
+
+def coset_for_cell(cell_index: CellIndex) -> Coset:
+    """
+    Get the coset for a given ``cell_index``.
+    Precisely, consider the group of roots of unity of order FIELD_ELEMENTS_PER_CELL * CELLS_PER_EXT_BLOB.
+    Let G = {1, g, g^2, ...} denote its subgroup of order FIELD_ELEMENTS_PER_CELL.
+    Then, the coset is defined as h * G = {h, hg, hg^2, ...}.
+    This function, returns the coset.
+    """
+    assert cell_index < CELLS_PER_EXT_BLOB
+    roots_of_unity_brp = bit_reversal_permutation(
+        compute_roots_of_unity(FIELD_ELEMENTS_PER_EXT_BLOB)
+    )
+    return Coset(roots_of_unity_brp[FIELD_ELEMENTS_PER_CELL * cell_index:FIELD_ELEMENTS_PER_CELL * (cell_index + 1)])
+
+
+def compute_cells(blob: Blob) -> Vector[Cell, CELLS_PER_EXT_BLOB]:
+    """
+    Given a blob, extend it and return all the cells of the extended blob.
+
+    Public method.
+    """
+    assert len(blob) == BYTES_PER_BLOB
+
+    polynomial = blob_to_polynomial(blob)
+    polynomial_coeff = polynomial_eval_to_coeff(polynomial)
+
+    cells = []
+    for i in range(CELLS_PER_EXT_BLOB):
+        coset = coset_for_cell(CellIndex(i))
+        ys = CosetEvals([evaluate_polynomialcoeff(polynomial_coeff, z) for z in coset])
+        cells.append(coset_evals_to_cell(CosetEvals(ys)))
+    return cells
+
+
+def compute_cells_and_kzg_proofs_polynomialcoeff(polynomial_coeff: PolynomialCoeff) -> Tuple[
+        Vector[Cell, CELLS_PER_EXT_BLOB],
+        Vector[KZGProof, CELLS_PER_EXT_BLOB]]:
+    """
+    Helper function which computes cells/proofs for a polynomial in coefficient form.
+    """
+    cells, proofs = [], []
+    for i in range(CELLS_PER_EXT_BLOB):
+        coset = coset_for_cell(CellIndex(i))
+        proof, ys = compute_kzg_proof_multi_impl(polynomial_coeff, coset)
+        cells.append(coset_evals_to_cell(CosetEvals(ys)))
+        proofs.append(proof)
+    return cells, proofs
+
+
+def compute_cells_and_kzg_proofs(blob: Blob) -> Tuple[
+        Vector[Cell, CELLS_PER_EXT_BLOB],
+        Vector[KZGProof, CELLS_PER_EXT_BLOB]]:
+    """
+    Compute all the cell proofs for an extended blob. This is an inefficient O(n^2) algorithm,
+    for performant implementation the FK20 algorithm that runs in O(n log n) should be
+    used instead.
+
+    Public method.
+    """
+    assert len(blob) == BYTES_PER_BLOB
+
+    polynomial = blob_to_polynomial(blob)
+    polynomial_coeff = polynomial_eval_to_coeff(polynomial)
+    return compute_cells_and_kzg_proofs_polynomialcoeff(polynomial_coeff)
+
+
+def verify_cell_kzg_proof_batch(commitments_bytes: Sequence[Bytes48],
+                                cell_indices: Sequence[CellIndex],
+                                cells: Sequence[Cell],
+                                proofs_bytes: Sequence[Bytes48]) -> bool:
+    """
+    Verify that a set of cells belong to their corresponding commitments.
+
+    Given four lists representing tuples of (``commitment``, ``cell_index``, ``cell``, ``proof``),
+    the function verifies ``proof`` which shows that ``cell`` are the evaluations of the polynomial
+    associated with ``commitment``, evaluated over the domain specified by ``cell_index``.
+
+    This function implements the universal verification equation that has been introduced here:
+    https://ethresear.ch/t/a-universal-verification-equation-for-data-availability-sampling/13240
+
+    Public method.
+    """
+
+    assert len(commitments_bytes) == len(cells) == len(proofs_bytes) == len(cell_indices)
+    for commitment_bytes in commitments_bytes:
+        assert len(commitment_bytes) == BYTES_PER_COMMITMENT
+    for cell_index in cell_indices:
+        assert cell_index < CELLS_PER_EXT_BLOB
+    for cell in cells:
+        assert len(cell) == BYTES_PER_CELL
+    for proof_bytes in proofs_bytes:
+        assert len(proof_bytes) == BYTES_PER_PROOF
+
+    # Create the list of deduplicated commitments we are dealing with
+    deduplicated_commitments = [bytes_to_kzg_commitment(commitment_bytes)
+                                for commitment_bytes in set(commitments_bytes)]
+    # Create indices list mapping initial commitments (that may contain duplicates) to the deduplicated commitments
+    commitment_indices = [CommitmentIndex(deduplicated_commitments.index(commitment_bytes))
+                          for commitment_bytes in commitments_bytes]
+
+    cosets_evals = [cell_to_coset_evals(cell) for cell in cells]
+    proofs = [bytes_to_kzg_proof(proof_bytes) for proof_bytes in proofs_bytes]
+
+    # Do the actual verification
+    return verify_cell_kzg_proof_batch_impl(
+        deduplicated_commitments,
+        commitment_indices,
+        cell_indices,
+        cosets_evals,
+        proofs)
+
+
+def construct_vanishing_polynomial(missing_cell_indices: Sequence[CellIndex]) -> Sequence[BLSFieldElement]:
+    """
+    Given the cells indices that are missing from the data, compute the polynomial that vanishes at every point that
+    corresponds to a missing field element.
+
+    This method assumes that all of the cells cannot be missing. In this case the vanishing polynomial
+    could be computed as Z(x) = x^n - 1, where `n` is FIELD_ELEMENTS_PER_EXT_BLOB.
+
+    We never encounter this case however because this method is used solely for recovery and recovery only
+    works if at least half of the cells are available.
+    """
+    # Get the small domain
+    roots_of_unity_reduced = compute_roots_of_unity(CELLS_PER_EXT_BLOB)
+
+    # Compute polynomial that vanishes at all the missing cells (over the small domain)
+    short_zero_poly = vanishing_polynomialcoeff([
+        roots_of_unity_reduced[reverse_bits(missing_cell_index, CELLS_PER_EXT_BLOB)]
+        for missing_cell_index in missing_cell_indices
+    ])
+
+    # Extend vanishing polynomial to full domain using the closed form of the vanishing polynomial over a coset
+    zero_poly_coeff = [BLSFieldElement(0)] * FIELD_ELEMENTS_PER_EXT_BLOB
+    for i, coeff in enumerate(short_zero_poly):
+        zero_poly_coeff[i * FIELD_ELEMENTS_PER_CELL] = coeff
+
+    return zero_poly_coeff
+
+
+def recover_polynomialcoeff(cell_indices: Sequence[CellIndex],
+                            cosets_evals: Sequence[CosetEvals]) -> PolynomialCoeff:
+    """
+    Recover the polynomial in coefficient form that when evaluated at the roots of unity will give the extended blob.
+    """
+    # Get the extended domain. This will be referred to as the FFT domain.
+    roots_of_unity_extended = compute_roots_of_unity(FIELD_ELEMENTS_PER_EXT_BLOB)
+
+    # Flatten the cosets evaluations.
+    # If a cell is missing, then its evaluation is zero.
+    # We let E(x) be a polynomial of degree FIELD_ELEMENTS_PER_EXT_BLOB - 1
+    # that interpolates the evaluations including the zeros for missing ones.
+    extended_evaluation_rbo = [BLSFieldElement(0)] * FIELD_ELEMENTS_PER_EXT_BLOB
+    for cell_index, cell in zip(cell_indices, cosets_evals):
+        start = cell_index * FIELD_ELEMENTS_PER_CELL
+        end = (cell_index + 1) * FIELD_ELEMENTS_PER_CELL
+        extended_evaluation_rbo[start:end] = cell
+    extended_evaluation = bit_reversal_permutation(extended_evaluation_rbo)
+
+    # Compute the vanishing polynomial Z(x) in coefficient form.
+    # Z(x) is the polynomial which vanishes on all of the evaluations which are missing.
+    missing_cell_indices = [CellIndex(cell_index) for cell_index in range(CELLS_PER_EXT_BLOB)
+                            if cell_index not in cell_indices]
+    zero_poly_coeff = construct_vanishing_polynomial(missing_cell_indices)
+
+    # Convert Z(x) to evaluation form over the FFT domain
+    zero_poly_eval = fft_field(zero_poly_coeff, roots_of_unity_extended)
+
+    # Compute (E*Z)(x) = E(x) * Z(x) in evaluation form over the FFT domain
+    # Note: over the FFT domain, the polynomials (E*Z)(x) and (P*Z)(x) agree, where
+    # P(x) is the polynomial we want to reconstruct (degree FIELD_ELEMENTS_PER_BLOB - 1).
+    extended_evaluation_times_zero = [a * b for a, b in zip(zero_poly_eval, extended_evaluation)]
+
+    # We know that (E*Z)(x) and (P*Z)(x) agree over the FFT domain,
+    # and we know that (P*Z)(x) has degree at most FIELD_ELEMENTS_PER_EXT_BLOB - 1.
+    # Thus, an inverse FFT of the evaluations of (E*Z)(x) (= evaluations of (P*Z)(x))
+    # yields the coefficient form of (P*Z)(x).
+    extended_evaluation_times_zero_coeffs = fft_field(extended_evaluation_times_zero, roots_of_unity_extended, inv=True)
+
+    # Next step is to divide the polynomial (P*Z)(x) by polynomial Z(x) to get P(x).
+    # We do this in evaluation form over a coset of the FFT domain to avoid division by 0.
+
+    # Convert (P*Z)(x) to evaluation form over a coset of the FFT domain
+    extended_evaluations_over_coset = coset_fft_field(extended_evaluation_times_zero_coeffs, roots_of_unity_extended)
+
+    # Convert Z(x) to evaluation form over a coset of the FFT domain
+    zero_poly_over_coset = coset_fft_field(zero_poly_coeff, roots_of_unity_extended)
+
+    # Compute P(x) = (P*Z)(x) / Z(x) in evaluation form over a coset of the FFT domain
+    reconstructed_poly_over_coset = [a / b for a, b in zip(extended_evaluations_over_coset, zero_poly_over_coset)]
+
+    # Convert P(x) to coefficient form
+    reconstructed_poly_coeff = coset_fft_field(reconstructed_poly_over_coset, roots_of_unity_extended, inv=True)
+
+    return PolynomialCoeff(reconstructed_poly_coeff[:FIELD_ELEMENTS_PER_BLOB])
+
+
+def recover_cells_and_kzg_proofs(cell_indices: Sequence[CellIndex],
+                                 cells: Sequence[Cell]) -> Tuple[
+        Vector[Cell, CELLS_PER_EXT_BLOB],
+        Vector[KZGProof, CELLS_PER_EXT_BLOB]]:
+    """
+    Given at least 50% of cells for a blob, recover all the cells/proofs.
+    This algorithm uses FFTs to recover cells faster than using Lagrange
+    implementation, as can be seen here:
+    https://ethresear.ch/t/reed-solomon-erasure-code-recovery-in-n-log-2-n-time-with-ffts/3039
+
+    A faster version thanks to Qi Zhou can be found here:
+    https://github.com/ethereum/research/blob/51b530a53bd4147d123ab3e390a9d08605c2cdb8/polynomial_reconstruction/polynomial_reconstruction_danksharding.py
+
+    Public method.
+    """
+    # Check we have the same number of cells and indices
+    assert len(cell_indices) == len(cells)
+    # Check we have enough cells to be able to perform the reconstruction
+    assert CELLS_PER_EXT_BLOB // 2 <= len(cell_indices) <= CELLS_PER_EXT_BLOB
+    # Check for duplicates
+    assert len(cell_indices) == len(set(cell_indices))
+    # Check that the cell indices are within bounds
+    for cell_index in cell_indices:
+        assert cell_index < CELLS_PER_EXT_BLOB
+    # Check that each cell is the correct length
+    for cell in cells:
+        assert len(cell) == BYTES_PER_CELL
+
+    # Convert cells to coset evaluations
+    cosets_evals = [cell_to_coset_evals(cell) for cell in cells]
+
+    # Given the coset evaluations, recover the polynomial in coefficient form
+    polynomial_coeff = recover_polynomialcoeff(cell_indices, cosets_evals)
+
+    # Recompute all cells/proofs
+    return compute_cells_and_kzg_proofs_polynomialcoeff(polynomial_coeff)
+
+
+def get_custody_groups(node_id: NodeID, custody_group_count: uint64) -> Sequence[CustodyIndex]:
+    assert custody_group_count <= config.NUMBER_OF_CUSTODY_GROUPS
+
+    current_id = uint256(node_id)
+    custody_groups: List[CustodyIndex] = []
+    while len(custody_groups) < custody_group_count:
+        custody_group = CustodyIndex(
+            bytes_to_uint64(hash(uint_to_bytes(current_id))[0:8])
+            % config.NUMBER_OF_CUSTODY_GROUPS
+        )
+        if custody_group not in custody_groups:
+            custody_groups.append(custody_group)
+        if current_id == UINT256_MAX:
+            # Overflow prevention
+            current_id = uint256(0)
+        else:
+            current_id += 1
+
+    assert len(custody_groups) == len(set(custody_groups))
+    return sorted(custody_groups)
+
+
+def compute_columns_for_custody_group(custody_group: CustodyIndex) -> Sequence[ColumnIndex]:
+    assert custody_group < config.NUMBER_OF_CUSTODY_GROUPS
+    columns_per_group = config.NUMBER_OF_COLUMNS // config.NUMBER_OF_CUSTODY_GROUPS
+    return sorted([
+        ColumnIndex(config.NUMBER_OF_CUSTODY_GROUPS * i + custody_group)
+        for i in range(columns_per_group)
+    ])
+
+
+def compute_matrix(blobs: Sequence[Blob]) -> Sequence[MatrixEntry]:
+    """
+    Return the full, flattened sequence of matrix entries.
+
+    This helper demonstrates the relationship between blobs and the matrix of cells/proofs.
+    The data structure for storing cells/proofs is implementation-dependent.
+    """
+    matrix = []
+    for blob_index, blob in enumerate(blobs):
+        cells, proofs = compute_cells_and_kzg_proofs(blob)
+        for cell_index, (cell, proof) in enumerate(zip(cells, proofs)):
+            matrix.append(MatrixEntry(
+                cell=cell,
+                kzg_proof=proof,
+                row_index=blob_index,
+                column_index=cell_index,
+            ))
+    return matrix
+
+
+def recover_matrix(partial_matrix: Sequence[MatrixEntry], blob_count: uint64) -> Sequence[MatrixEntry]:
+    """
+    Recover the full, flattened sequence of matrix entries.
+
+    This helper demonstrates how to apply ``recover_cells_and_kzg_proofs``.
+    The data structure for storing cells/proofs is implementation-dependent.
+    """
+    matrix = []
+    for blob_index in range(blob_count):
+        cell_indices = [e.column_index for e in partial_matrix if e.row_index == blob_index]
+        cells = [e.cell for e in partial_matrix if e.row_index == blob_index]
+        recovered_cells, recovered_proofs = recover_cells_and_kzg_proofs(cell_indices, cells)
+        for cell_index, (cell, proof) in enumerate(zip(recovered_cells, recovered_proofs)):
+            matrix.append(MatrixEntry(
+                cell=cell,
+                kzg_proof=proof,
+                row_index=blob_index,
+                column_index=cell_index,
+            ))
+    return matrix
+
+
+def upgrade_to_fulu(pre: electra.BeaconState) -> BeaconState:
+    epoch = electra.get_current_epoch(pre)
+    
+    # Update ExecutionPayloadHeader with proposer_slash_amount field
+    latest_execution_payload_header = ExecutionPayloadHeader(
+        parent_hash=pre.latest_execution_payload_header.parent_hash,
+        fee_recipient=pre.latest_execution_payload_header.fee_recipient,
+        state_root=pre.latest_execution_payload_header.state_root,
+        receipts_root=pre.latest_execution_payload_header.receipts_root,
+        logs_bloom=pre.latest_execution_payload_header.logs_bloom,
+        prev_randao=pre.latest_execution_payload_header.prev_randao,
+        block_number=pre.latest_execution_payload_header.block_number,
+        gas_limit=pre.latest_execution_payload_header.gas_limit,
+        gas_used=pre.latest_execution_payload_header.gas_used,
+        timestamp=pre.latest_execution_payload_header.timestamp,
+        extra_data=pre.latest_execution_payload_header.extra_data,
+        base_fee_per_gas=pre.latest_execution_payload_header.base_fee_per_gas,
+        block_hash=pre.latest_execution_payload_header.block_hash,
+        transactions_root=pre.latest_execution_payload_header.transactions_root,
+        withdrawals_root=pre.latest_execution_payload_header.withdrawals_root,
+        blob_gas_used=pre.latest_execution_payload_header.blob_gas_used,
+        excess_blob_gas=pre.latest_execution_payload_header.excess_blob_gas,
+        proposer_slash_amount=Gwei(0),  # Initialize to 0 for the upgrade
+    )
+    
+    post = BeaconState(
+        # Versioning
+        genesis_time=pre.genesis_time,
+        genesis_validators_root=pre.genesis_validators_root,
+        slot=pre.slot,
+        fork=Fork(
+            previous_version=pre.fork.current_version,
+            current_version=config.FULU_FORK_VERSION,  # [Modified in Fulu]
+            epoch=epoch,
+        ),
+        # History
+        latest_block_header=pre.latest_block_header,
+        block_roots=pre.block_roots,
+        state_roots=pre.state_roots,
+        historical_roots=pre.historical_roots,
+        # Eth1
+        eth1_data=pre.eth1_data,
+        eth1_data_votes=pre.eth1_data_votes,
+        eth1_deposit_index=pre.eth1_deposit_index,
+        # Registry
+        validators=pre.validators,
+        balances=pre.balances,
+        # Randomness
+        randao_mixes=pre.randao_mixes,
+        # Slashings
+        slashings=pre.slashings,
+        # Participation
+        previous_epoch_participation=pre.previous_epoch_participation,
+        current_epoch_participation=pre.current_epoch_participation,
+        # Finality
+        justification_bits=pre.justification_bits,
+        previous_justified_checkpoint=pre.previous_justified_checkpoint,
+        current_justified_checkpoint=pre.current_justified_checkpoint,
+        finalized_checkpoint=pre.finalized_checkpoint,
+        # Inactivity
+        inactivity_scores=pre.inactivity_scores,
+        # Sync
+        current_sync_committee=pre.current_sync_committee,
+        next_sync_committee=pre.next_sync_committee,
+        # Execution-layer
+        latest_execution_payload_header=latest_execution_payload_header,  # Use updated header with proposer_slash_amount
+        # Withdrawals
+        next_withdrawal_index=pre.next_withdrawal_index,
+        next_withdrawal_validator_index=pre.next_withdrawal_validator_index,
+        # Deep history valid from Capella onwards
+        historical_summaries=pre.historical_summaries,
+        # On-chain deposits
+        deposit_requests_start_index=pre.deposit_requests_start_index,
+        # Consolidations
+        deposit_balance_to_consume=pre.deposit_balance_to_consume,
+        exit_balance_to_consume=pre.exit_balance_to_consume,
+        earliest_exit_epoch=pre.earliest_exit_epoch,
+        consolidation_balance_to_consume=pre.consolidation_balance_to_consume,
+        earliest_consolidation_epoch=pre.earliest_consolidation_epoch,
+        pending_deposits=pre.pending_deposits,
+        pending_partial_withdrawals=pre.pending_partial_withdrawals,
+        pending_consolidations=pre.pending_consolidations,
+    )
+
+    return post
+
+
+def verify_data_column_sidecar(sidecar: DataColumnSidecar) -> bool:
+    """
+    Verify if the data column sidecar is valid.
+    """
+    # The sidecar index must be within the valid range
+    if sidecar.index >= config.NUMBER_OF_COLUMNS:
+        return False
+
+    # A sidecar for zero blobs is invalid
+    if len(sidecar.kzg_commitments) == 0:
+        return False
+
+    # The column length must be equal to the number of commitments/proofs
+    if len(sidecar.column) != len(sidecar.kzg_commitments) or len(sidecar.column) != len(sidecar.kzg_proofs):
+        return False
+
+    return True
+
+
+def verify_data_column_sidecar_kzg_proofs(sidecar: DataColumnSidecar) -> bool:
+    """
+    Verify if the KZG proofs are correct.
+    """
+    # The column index also represents the cell index
+    cell_indices = [CellIndex(sidecar.index)] * len(sidecar.column)
+
+    # Batch verify that the cells match the corresponding commitments and proofs
+    return verify_cell_kzg_proof_batch(
+        commitments_bytes=sidecar.kzg_commitments,
+        cell_indices=cell_indices,
+        cells=sidecar.column,
+        proofs_bytes=sidecar.kzg_proofs,
+    )
+
+
+def verify_data_column_sidecar_inclusion_proof(sidecar: DataColumnSidecar) -> bool:
+    """
+    Verify if the given KZG commitments included in the given beacon block.
+    """
+    gindex = get_subtree_index(get_generalized_index(BeaconBlockBody, 'blob_kzg_commitments'))
+    return is_valid_merkle_branch(
+        leaf=hash_tree_root(sidecar.kzg_commitments),
+        branch=sidecar.kzg_commitments_inclusion_proof,
+        depth=KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH,
+        index=gindex,
+        root=sidecar.signed_block_header.message.body_root,
+    )
+
+
+def compute_subnet_for_data_column_sidecar(column_index: ColumnIndex) -> SubnetID:
+    return SubnetID(column_index % config.DATA_COLUMN_SIDECAR_SUBNET_COUNT)
+
+
+def get_extended_sample_count(allowed_failures: uint64) -> uint64:
+    assert 0 <= allowed_failures <= config.NUMBER_OF_COLUMNS // 2
+    """
+    Return the sample count if allowing failures.
+
+    This helper demonstrates how to calculate the number of columns to query per slot when
+    allowing given number of failures, assuming uniform random selection without replacement.
+    Nested functions are direct replacements of Python library functions math.comb and
+    scipy.stats.hypergeom.cdf, with the same signatures.
+    """
+
+    def math_comb(n: int, k: int) -> int:
+        if not 0 <= k <= n:
+            return 0
+        r = 1
+        for i in range(min(k, n - k)):
+            r = r * (n - i) // (i + 1)
+        return r
+
+    def hypergeom_cdf(k: uint64, M: uint64, n: uint64, N: uint64) -> float:
+        # Note: It contains float-point computations.
+        # Convert uint64 to Python integers before computations.
+        k = int(k)
+        M = int(M)
+        n = int(n)
+        N = int(N)
+        return sum([math_comb(n, i) * math_comb(M - n, N - i) / math_comb(M, N)
+                    for i in range(k + 1)])
+
+    worst_case_missing = config.NUMBER_OF_COLUMNS // 2 + 1
+    false_positive_threshold = hypergeom_cdf(0, config.NUMBER_OF_COLUMNS,
+                                             worst_case_missing, config.SAMPLES_PER_SLOT)
+    for sample_count in range(config.SAMPLES_PER_SLOT, config.NUMBER_OF_COLUMNS + 1):
+        if hypergeom_cdf(allowed_failures, config.NUMBER_OF_COLUMNS,
+                         worst_case_missing, sample_count) <= false_positive_threshold:
+            break
+    return sample_count
+
+
+def get_validators_custody_requirement(state: BeaconState, validator_indices: Sequence[ValidatorIndex]) -> uint64:
+    total_node_balance = sum(state.validators[index].effective_balance for index in validator_indices)
+    count = total_node_balance // config.BALANCE_PER_ADDITIONAL_CUSTODY_GROUP
+    return min(max(count, config.VALIDATOR_CUSTODY_REQUIREMENT), config.NUMBER_OF_CUSTODY_GROUPS)
+
+
+def get_data_column_sidecars(
+    signed_block_header: SignedBeaconBlockHeader,
+    kzg_commitments: List[KZGCommitment, MAX_BLOB_COMMITMENTS_PER_BLOCK],
+    kzg_commitments_inclusion_proof: Vector[Bytes32, KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH],
+    cells_and_kzg_proofs: Sequence[Tuple[
+        Vector[Cell, CELLS_PER_EXT_BLOB],
+        Vector[KZGProof, CELLS_PER_EXT_BLOB]
+    ]]
+) -> Sequence[DataColumnSidecar]:
+    """
+    Given a signed block header and the commitments, inclusion proof, cells/proofs associated with
+    each blob in the block, assemble the sidecars which can be distributed to peers.
+    """
+    assert len(cells_and_kzg_proofs) == len(kzg_commitments)
+
+    sidecars = []
+    for column_index in range(config.NUMBER_OF_COLUMNS):
+        column_cells, column_proofs = [], []
+        for cells, proofs in cells_and_kzg_proofs:
+            column_cells.append(cells[column_index])
+            column_proofs.append(proofs[column_index])
+        sidecars.append(DataColumnSidecar(
+            index=column_index,
+            column=column_cells,
+            kzg_commitments=kzg_commitments,
+            kzg_proofs=column_proofs,
+            signed_block_header=signed_block_header,
+            kzg_commitments_inclusion_proof=kzg_commitments_inclusion_proof,
+        ))
+    return sidecars
+
+
+def get_data_column_sidecars_from_block(
+    signed_block: SignedBeaconBlock,
+    cells_and_kzg_proofs: Sequence[Tuple[
+        Vector[Cell, CELLS_PER_EXT_BLOB],
+        Vector[KZGProof, CELLS_PER_EXT_BLOB]
+    ]]
+) -> Sequence[DataColumnSidecar]:
+    """
+    Given a signed block and the cells/proofs associated with each blob in the
+    block, assemble the sidecars which can be distributed to peers.
+    """
+    blob_kzg_commitments = signed_block.message.body.blob_kzg_commitments
+    signed_block_header = compute_signed_block_header(signed_block)
+    kzg_commitments_inclusion_proof = compute_merkle_proof(
+        signed_block.message.body,
+        get_generalized_index(BeaconBlockBody, 'blob_kzg_commitments'),
+    )
+    return get_data_column_sidecars(
+        signed_block_header,
+        blob_kzg_commitments,
+        kzg_commitments_inclusion_proof,
+        cells_and_kzg_proofs
+    )
+
+
+def get_data_column_sidecars_from_column_sidecar(
+    sidecar: DataColumnSidecar,
+    cells_and_kzg_proofs: Sequence[Tuple[
+        Vector[Cell, CELLS_PER_EXT_BLOB],
+        Vector[KZGProof, CELLS_PER_EXT_BLOB]
+    ]]
+) -> Sequence[DataColumnSidecar]:
+    """
+    Given a DataColumnSidecar and the cells/proofs associated with each blob corresponding
+    to the commitments it contains, assemble all sidecars for distribution to peers.
+    """
+    assert len(cells_and_kzg_proofs) == len(sidecar.kzg_commitments)
+
+    return get_data_column_sidecars(
+        sidecar.signed_block_header,
+        sidecar.kzg_commitments,
+        sidecar.kzg_commitments_inclusion_proof,
+        cells_and_kzg_proofs
+    )
+
+
 def get_eth1_data(block: Eth1Block) -> Eth1Data:
     """
     A stub function return mocking Eth1Data.
@@ -5766,7 +6758,6 @@ def cache_this(key_fn, value_fn, lru_size):  # type: ignore
 
     def wrapper(*args, **kw):  # type: ignore
         key = key_fn(*args, **kw)
-        nonlocal cache_dict
         if key not in cache_dict:
             cache_dict[key] = value_fn(*args, **kw)
         return cache_dict[key]
@@ -5859,6 +6850,11 @@ def retrieve_blobs_and_proofs(beacon_block_root: Root) -> Tuple[Sequence[Blob], 
     return [], []
 
 
+def retrieve_column_sidecars(beacon_block_root: Root) -> Sequence[DataColumnSidecar]:
+    # pylint: disable=unused-argument
+    return []
+
+
 class NoopExecutionEngine(ExecutionEngine):
 
     def notify_new_payload(self: ExecutionEngine,
@@ -5905,3 +6901,4 @@ assert NEXT_SYNC_COMMITTEE_GINDEX_ELECTRA == get_generalized_index(BeaconState, 
 
 
 assert KZG_COMMITMENT_INCLUSION_PROOF_DEPTH == uint64(floorlog2(get_generalized_index(BeaconBlockBody, 'blob_kzg_commitments')) + 1 + ceillog2(MAX_BLOB_COMMITMENTS_PER_BLOCK))  # noqa: E501
+assert KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH == uint64(floorlog2(get_generalized_index(BeaconBlockBody, 'blob_kzg_commitments')))  # noqa: E501
