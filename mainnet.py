@@ -237,6 +237,9 @@ DOMAIN_SELECTION_PROOF = DomainType('0x05000000')
 DOMAIN_AGGREGATE_AND_PROOF = DomainType('0x06000000')
 DOMAIN_APPLICATION_MASK = DomainType('0x00000001')
 INTERVALS_PER_SLOT = uint64(3)
+ATTESTATION_DEADLINE_SECONDS = uint64(3)  # 3 seconds until attestation deadline
+ATTESTATION_PERIOD_SECONDS = uint64(2)  # 2 seconds for attesting
+AGGREGATION_PERIOD_SECONDS = uint64(1)  # 1 second for aggregations
 NODE_ID_BITS = 256
 MAX_CONCURRENT_REQUESTS = 2
 TARGET_AGGREGATORS_PER_COMMITTEE = 2**4
@@ -449,7 +452,7 @@ config = Configuration(
     MIN_GENESIS_TIME=uint64(1606824000),
     GENESIS_FORK_VERSION=Version('0x00000000'),
     GENESIS_DELAY=uint64(604800),
-    SECONDS_PER_SLOT=uint64(12),
+    SECONDS_PER_SLOT=uint64(6),
     SECONDS_PER_ETH1_BLOCK=uint64(14),
     MIN_VALIDATOR_WITHDRAWABILITY_DELAY=uint64(256),
     SHARD_COMMITTEE_PERIOD=uint64(256),
@@ -2530,9 +2533,9 @@ def is_finalization_ok(store: Store, slot: Slot) -> bool:
 
 
 def is_proposing_on_time(store: Store) -> bool:
-    # Use half `config.SECONDS_PER_SLOT // INTERVALS_PER_SLOT` as the proposer reorg deadline
+    # Use half of the attestation deadline as the proposer reorg deadline
     time_into_slot = (store.time - store.genesis_time) % config.SECONDS_PER_SLOT
-    proposer_reorg_cutoff = config.SECONDS_PER_SLOT // INTERVALS_PER_SLOT // 2
+    proposer_reorg_cutoff = ATTESTATION_DEADLINE_SECONDS // 2
     return time_into_slot <= proposer_reorg_cutoff
 
 
@@ -2724,7 +2727,7 @@ def on_block(store: Store, signed_block: SignedBeaconBlock) -> None:
 
     # Add block timeliness to the store
     time_into_slot = (store.time - store.genesis_time) % config.SECONDS_PER_SLOT
-    is_before_attesting_interval = time_into_slot < config.SECONDS_PER_SLOT // INTERVALS_PER_SLOT
+    is_before_attesting_interval = time_into_slot < ATTESTATION_DEADLINE_SECONDS
     is_timely = get_current_slot(store) == block.slot and is_before_attesting_interval
     store.block_timeliness[hash_tree_root(block)] = is_timely
 
@@ -2846,6 +2849,31 @@ def get_epoch_signature(state: BeaconState, block: BeaconBlock, privkey: int) ->
 
 def compute_time_at_slot(state: BeaconState, slot: Slot) -> uint64:
     return uint64(state.genesis_time + slot * config.SECONDS_PER_SLOT)
+
+
+def get_attestation_deadline_time(state: BeaconState, slot: Slot) -> uint64:
+    """Return the time at which attestations for the given slot must be submitted."""
+    return compute_time_at_slot(state, slot) + ATTESTATION_DEADLINE_SECONDS
+
+
+def get_attestation_period_start_time(state: BeaconState, slot: Slot) -> uint64:
+    """Return the time at which the attestation period starts for the given slot."""
+    return compute_time_at_slot(state, slot) + ATTESTATION_DEADLINE_SECONDS
+
+
+def get_attestation_period_end_time(state: BeaconState, slot: Slot) -> uint64:
+    """Return the time at which the attestation period ends for the given slot."""
+    return compute_time_at_slot(state, slot) + ATTESTATION_DEADLINE_SECONDS + ATTESTATION_PERIOD_SECONDS
+
+
+def get_aggregation_period_start_time(state: BeaconState, slot: Slot) -> uint64:
+    """Return the time at which the aggregation period starts for the given slot."""
+    return compute_time_at_slot(state, slot) + ATTESTATION_DEADLINE_SECONDS + ATTESTATION_PERIOD_SECONDS
+
+
+def get_aggregation_period_end_time(state: BeaconState, slot: Slot) -> uint64:
+    """Return the time at which the aggregation period ends for the given slot (end of slot)."""
+    return compute_time_at_slot(state, slot) + config.SECONDS_PER_SLOT
 
 
 def voting_period_start_time(state: BeaconState) -> uint64:
